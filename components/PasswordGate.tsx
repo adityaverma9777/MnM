@@ -46,7 +46,7 @@ export default function PasswordGate() {
                 </div>
                 <div className="xp-body" style={styles.body}>
                     <img src="/logo.png" alt="MnM" style={styles.logo} />
-                    <p style={styles.welcome}>Welcome to MnM</p>
+                    <p style={styles.welcome}>Yooooooooo!!!!</p>
                     <p style={styles.subtitle}>Heyy-Hola.</p>
 
                     <form onSubmit={handleSubmit} style={styles.form}>

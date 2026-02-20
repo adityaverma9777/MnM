@@ -90,7 +90,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                 hls.audioTrack = trackIndex;
                 setActiveAudioTrack(trackIndex);
             } else {
-                // Native HTML5 audioTracks
+
                 const video = videoRef.current;
                 if (video && (video as any).audioTracks) {
                     const tracks = (video as any).audioTracks;
@@ -140,7 +140,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     }
                 });
 
-                // Detect HLS audio tracks
+
                 hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
                     const tracks: AudioTrackInfo[] = hls.audioTracks.map((t, i) => ({
                         index: i,
@@ -156,10 +156,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                 video.src = src;
             }
         } else {
-            // Direct video file
+
             video.src = src;
 
-            // Detect native audio tracks after metadata loads
             const detectNativeTracks = () => {
                 const nativeTracks = (video as any).audioTracks;
                 if (nativeTracks && nativeTracks.length > 1) {
@@ -257,7 +256,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
 
     useEffect(() => {
         const handleFsChange = () => {
-            setIsFullscreen(!!document.fullscreenElement);
+            const isFs = !!document.fullscreenElement;
+            setIsFullscreen(isFs);
+
+            // Unlock orientation when exiting fullscreen
+            if (!isFs) {
+                try {
+                    screen.orientation?.unlock?.();
+                } catch { /* not supported */ }
+            }
         };
         document.addEventListener('fullscreenchange', handleFsChange);
         return () => document.removeEventListener('fullscreenchange', handleFsChange);
@@ -306,13 +313,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         }
     }, []);
 
-    const toggleFullscreen = useCallback(() => {
+    const toggleFullscreen = useCallback(async () => {
         const container = containerRef.current;
         if (!container) return;
         if (document.fullscreenElement) {
-            document.exitFullscreen();
+            await document.exitFullscreen();
         } else {
-            container.requestFullscreen().catch(() => { });
+            await container.requestFullscreen().catch(() => { });
+            // Lock to landscape on mobile
+            try {
+                await (screen.orientation as any)?.lock?.('landscape');
+            } catch { /* not supported or not allowed */ }
         }
     }, []);
 
