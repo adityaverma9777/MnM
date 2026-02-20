@@ -45,7 +45,7 @@ export default function PasswordGate() {
                     </span>
                 </div>
                 <div className="xp-body" style={styles.body}>
-                    <div style={styles.icon}>🖥️</div>
+                    <img src="/logo.png" alt="MnM" style={styles.logo} />
                     <p style={styles.welcome}>Welcome to MnM</p>
                     <p style={styles.subtitle}>Heyy-Hola.</p>
 
@@ -96,8 +96,10 @@ const styles: Record<string, React.CSSProperties> = {
         gap: 8,
         padding: 24,
     },
-    icon: {
-        fontSize: 48,
+    logo: {
+        width: 72,
+        height: 72,
+        objectFit: 'contain' as const,
         marginBottom: 8,
     },
     welcome: {
