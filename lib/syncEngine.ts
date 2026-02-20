@@ -78,7 +78,7 @@ export type SyncEvent =
     | AudioTrackEvent;
 
 
-const DRIFT_TOLERANCE_MS = 2000;
+const DRIFT_TOLERANCE_MS = 500;
 const TIME_SYNC_INTERVAL_MS = 5000;
 
 

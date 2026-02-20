@@ -1,0 +1,5 @@
+Or drop files into the videos/ folder and run node scripts/upload.mjs (it auto-scans that folder). 
+
+Whenever you want to empty your R2 bucket, run:
+
+node scripts/clear-bucket.mjs

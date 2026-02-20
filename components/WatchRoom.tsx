@@ -72,16 +72,21 @@ export default function WatchRoom() {
         setPeerBuffering(event.isBuffering);
 
         if (event.isBuffering) {
-
-            if (bufferTimerRef.current) clearTimeout(bufferTimerRef.current);
-            bufferTimerRef.current = setTimeout(() => {
-                if (peerBufferingRef.current) {
-                    setBufferNotice(`Waiting for ${event.sender}…`);
-                }
-            }, 3000);
+            // Immediately pause local playback to stay in sync
+            const player = playerRef.current;
+            if (player && player.isPlaying()) {
+                player.pause();
+            }
+            setBufferNotice(`Waiting for ${event.sender}…`);
         } else {
-            if (bufferTimerRef.current) clearTimeout(bufferTimerRef.current);
             setBufferNotice('');
+            // Peer recovered — force re-sync then resume
+            const player = playerRef.current;
+            if (player && !localBufferingRef.current) {
+                // Emit our current time so both sides agree on position
+                syncEngine.emitTimeSync(player.getCurrentTime(), 'playing');
+                player.play();
+            }
         }
     }, []);
 
@@ -92,8 +97,8 @@ export default function WatchRoom() {
         const localTime = player.getCurrentTime();
         const driftSeconds = Math.abs(localTime - event.time);
 
-
-        if (driftSeconds > 2) {
+        // Tight drift correction — 0.5s threshold
+        if (driftSeconds > 0.5) {
             player.seekTo(event.time);
         }
 
@@ -217,9 +222,8 @@ export default function WatchRoom() {
             if (!player) return;
             const time = player.getCurrentTime();
             const playing = player.isPlaying();
-            if (playing) {
-                syncEngine.emitTimeSync(time, 'playing');
-            }
+            // Send time sync in both playing AND paused states
+            syncEngine.emitTimeSync(time, playing ? 'playing' : 'paused');
         }, syncEngine.TIME_SYNC_INTERVAL_MS);
 
         return () => clearInterval(interval);
@@ -250,13 +254,18 @@ export default function WatchRoom() {
             if (localBufferingRef.current) {
                 syncEngine.emitBufferState(true);
             }
-        }, 2000);
+        }, 500);
     }, [syncEngine]);
 
     const handleBufferingEnd = useCallback(() => {
         localBufferingRef.current = false;
         if (localBufferTimerRef.current) clearTimeout(localBufferTimerRef.current);
         syncEngine.emitBufferState(false);
+        // After recovery, emit our current time so peer can re-sync
+        const player = playerRef.current;
+        if (player) {
+            syncEngine.emitTimeSync(player.getCurrentTime(), player.isPlaying() ? 'playing' : 'paused');
+        }
     }, [syncEngine]);
 
     const handleAudioTrackChange = useCallback(
