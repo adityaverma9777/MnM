@@ -55,6 +55,13 @@ export interface FileHashEvent {
     sender: string;
 }
 
+export interface AudioTrackEvent {
+    type: 'audio_track';
+    trackIndex: number;
+    sender: string;
+    timestamp: number;
+}
+
 export interface PresenceState {
     identity: string;
     online: boolean;
@@ -67,7 +74,8 @@ export type SyncEvent =
     | ChatMessageEvent
     | ChatUiStateEvent
     | RequestStateEvent
-    | FileHashEvent;
+    | FileHashEvent
+    | AudioTrackEvent;
 
 
 const DRIFT_TOLERANCE_MS = 500;
@@ -85,6 +93,7 @@ interface UseSyncEngineOptions {
     onChatUiState?: (event: ChatUiStateEvent) => void;
     onRequestState?: (event: RequestStateEvent) => void;
     onFileHash?: (event: FileHashEvent) => void;
+    onAudioTrack?: (event: AudioTrackEvent) => void;
     onPresenceChange?: (state: PresenceState) => void;
 }
 
@@ -145,6 +154,9 @@ export function useSyncEngine(options: UseSyncEngineOptions) {
                     break;
                 case 'file_hash':
                     callbackRefs.current.onFileHash?.(data);
+                    break;
+                case 'audio_track':
+                    callbackRefs.current.onAudioTrack?.(data);
                     break;
             }
         });
@@ -276,6 +288,19 @@ export function useSyncEngine(options: UseSyncEngineOptions) {
         [identity, broadcast]
     );
 
+    const emitAudioTrack = useCallback(
+        (trackIndex: number) => {
+            if (!identity) return;
+            broadcast({
+                type: 'audio_track',
+                trackIndex,
+                sender: identity,
+                timestamp: Date.now(),
+            });
+        },
+        [identity, broadcast]
+    );
+
     return {
         connected,
         emitPlaybackState,
@@ -285,6 +310,7 @@ export function useSyncEngine(options: UseSyncEngineOptions) {
         emitChatUiState,
         requestCurrentState,
         emitFileHash,
+        emitAudioTrack,
         DRIFT_TOLERANCE_MS,
         TIME_SYNC_INTERVAL_MS,
     };

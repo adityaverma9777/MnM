@@ -11,7 +11,14 @@ interface VideoPlayerProps {
     onBufferingStart?: () => void;
     onBufferingEnd?: () => void;
     onTimeUpdate?: (time: number) => void;
+    onAudioTrackChange?: (trackIndex: number) => void;
     onError?: (message: string) => void;
+}
+
+export interface AudioTrackInfo {
+    index: number;
+    label: string;
+    language: string;
 }
 
 export interface VideoPlayerHandle {
@@ -21,6 +28,8 @@ export interface VideoPlayerHandle {
     getCurrentTime: () => number;
     isPlaying: () => boolean;
     getVideoElement: () => HTMLVideoElement | null;
+    setAudioTrack: (trackIndex: number) => void;
+    getAudioTracks: () => AudioTrackInfo[];
 }
 
 function isHlsSource(src: string): boolean {
@@ -28,7 +37,7 @@ function isHlsSource(src: string): boolean {
 }
 
 const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer(
-    { src, onPlay, onPause, onSeeked, onBufferingStart, onBufferingEnd, onTimeUpdate, onError },
+    { src, onPlay, onPause, onSeeked, onBufferingStart, onBufferingEnd, onTimeUpdate, onAudioTrackChange, onError },
     ref
 ) {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -43,12 +52,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     const [playbackRate, setPlaybackRate] = useState(1);
     const [isBuffering, setIsBuffering] = useState(false);
     const [showControls, setShowControls] = useState(true);
+    const [audioTracks, setAudioTracks] = useState<AudioTrackInfo[]>([]);
+    const [activeAudioTrack, setActiveAudioTrack] = useState(0);
+    const [showAudioMenu, setShowAudioMenu] = useState(false);
     const controlsTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+    const suppressAudioEventRef = useRef(false);
 
-    // Flag to suppress event emission during programmatic changes
+
     const suppressEventsRef = useRef(false);
 
-    // Expose imperative handle
+
     useImperativeHandle(ref, () => ({
         play: () => {
             suppressEventsRef.current = true;
@@ -70,21 +83,41 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         getCurrentTime: () => videoRef.current?.currentTime || 0,
         isPlaying: () => !videoRef.current?.paused,
         getVideoElement: () => videoRef.current,
+        setAudioTrack: (trackIndex: number) => {
+            suppressAudioEventRef.current = true;
+            const hls = hlsRef.current;
+            if (hls && hls.audioTracks.length > trackIndex) {
+                hls.audioTrack = trackIndex;
+                setActiveAudioTrack(trackIndex);
+            } else {
+                // Native HTML5 audioTracks
+                const video = videoRef.current;
+                if (video && (video as any).audioTracks) {
+                    const tracks = (video as any).audioTracks;
+                    for (let i = 0; i < tracks.length; i++) {
+                        tracks[i].enabled = i === trackIndex;
+                    }
+                    setActiveAudioTrack(trackIndex);
+                }
+            }
+            setTimeout(() => { suppressAudioEventRef.current = false; }, 200);
+        },
+        getAudioTracks: () => audioTracks,
     }));
 
-    // Initialize video source (HLS or direct)
+
     useEffect(() => {
         const video = videoRef.current;
         if (!video || !src) return;
 
-        // Cleanup previous HLS instance
+
         if (hlsRef.current) {
             hlsRef.current.destroy();
             hlsRef.current = null;
         }
 
         if (isHlsSource(src)) {
-            // HLS streaming
+
             if (Hls.isSupported()) {
                 const hls = new Hls({
                     enableWorker: true,
@@ -107,14 +140,41 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                     }
                 });
 
+                // Detect HLS audio tracks
+                hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
+                    const tracks: AudioTrackInfo[] = hls.audioTracks.map((t, i) => ({
+                        index: i,
+                        label: t.name || `Track ${i + 1}`,
+                        language: t.lang || 'unknown',
+                    }));
+                    setAudioTracks(tracks);
+                });
+
                 hlsRef.current = hls;
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                // Native HLS (Safari)
+
                 video.src = src;
             }
         } else {
-            // Direct video file (mp4, mkv, webm, etc.)
+            // Direct video file
             video.src = src;
+
+            // Detect native audio tracks after metadata loads
+            const detectNativeTracks = () => {
+                const nativeTracks = (video as any).audioTracks;
+                if (nativeTracks && nativeTracks.length > 1) {
+                    const tracks: AudioTrackInfo[] = [];
+                    for (let i = 0; i < nativeTracks.length; i++) {
+                        tracks.push({
+                            index: i,
+                            label: nativeTracks[i].label || nativeTracks[i].language || `Track ${i + 1}`,
+                            language: nativeTracks[i].language || 'unknown',
+                        });
+                    }
+                    setAudioTracks(tracks);
+                }
+            };
+            video.addEventListener('loadedmetadata', detectNativeTracks);
         }
 
         return () => {
@@ -125,7 +185,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         };
     }, [src]);
 
-    // Video event listeners
+
     useEffect(() => {
         const video = videoRef.current;
         if (!video) return;
@@ -194,7 +254,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         };
     }, [onPlay, onPause, onSeeked, onTimeUpdate, onBufferingStart, onBufferingEnd]);
 
-    // Fullscreen change listener
+
     useEffect(() => {
         const handleFsChange = () => {
             setIsFullscreen(!!document.fullscreenElement);
@@ -203,7 +263,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         return () => document.removeEventListener('fullscreenchange', handleFsChange);
     }, []);
 
-    // Auto-hide controls
+
     const handleMouseMove = useCallback(() => {
         setShowControls(true);
         if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
@@ -287,7 +347,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                 onClick={togglePlay}
             />
 
-            {/* Buffering indicator */}
+
             {isBuffering && (
                 <div style={styles.bufferOverlay}>
                     <span style={{ fontSize: 32 }}>⏳</span>
@@ -295,7 +355,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                 </div>
             )}
 
-            {/* Controls */}
+
             <div
                 style={{
                     ...styles.controls,
@@ -337,6 +397,53 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                         </span>
                     </div>
                     <div style={styles.controlRight}>
+                        {audioTracks.length > 1 && (
+                            <div style={{ position: 'relative' }}>
+                                <button
+                                    className="xp-btn"
+                                    onClick={() => setShowAudioMenu(!showAudioMenu)}
+                                    style={styles.controlBtn}
+                                    title="Audio Track"
+                                >
+                                    🔈
+                                </button>
+                                {showAudioMenu && (
+                                    <div style={styles.audioMenu}>
+                                        {audioTracks.map((track) => (
+                                            <div
+                                                key={track.index}
+                                                style={{
+                                                    ...styles.audioMenuItem,
+                                                    background: track.index === activeAudioTrack ? '#316ac5' : 'transparent',
+                                                    color: track.index === activeAudioTrack ? '#fff' : '#000',
+                                                }}
+                                                onClick={() => {
+                                                    const hls = hlsRef.current;
+                                                    if (hls && hls.audioTracks.length > track.index) {
+                                                        hls.audioTrack = track.index;
+                                                    } else {
+                                                        const video = videoRef.current;
+                                                        if (video && (video as any).audioTracks) {
+                                                            const native = (video as any).audioTracks;
+                                                            for (let i = 0; i < native.length; i++) {
+                                                                native[i].enabled = i === track.index;
+                                                            }
+                                                        }
+                                                    }
+                                                    setActiveAudioTrack(track.index);
+                                                    setShowAudioMenu(false);
+                                                    if (!suppressAudioEventRef.current) {
+                                                        onAudioTrackChange?.(track.index);
+                                                    }
+                                                }}
+                                            >
+                                                {track.label} ({track.language})
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <button className="xp-btn" onClick={changePlaybackRate} style={styles.controlBtn}>
                             {playbackRate}x
                         </button>
@@ -435,6 +542,23 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: 11,
         fontFamily: 'var(--font-main)',
         marginLeft: 8,
+        whiteSpace: 'nowrap',
+    },
+    audioMenu: {
+        position: 'absolute',
+        bottom: '100%',
+        right: 0,
+        background: '#c0c0c0',
+        border: '2px solid #fff',
+        boxShadow: '2px 2px 4px rgba(0,0,0,0.3)',
+        minWidth: 160,
+        zIndex: 30,
+        marginBottom: 4,
+    },
+    audioMenuItem: {
+        padding: '4px 8px',
+        fontSize: 11,
+        cursor: 'pointer',
         whiteSpace: 'nowrap',
     },
 };

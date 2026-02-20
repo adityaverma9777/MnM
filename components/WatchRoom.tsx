@@ -13,6 +13,7 @@ import {
     ChatUiStateEvent,
     RequestStateEvent,
     FileHashEvent,
+    AudioTrackEvent,
     PresenceState,
 } from '@/lib/syncEngine';
 
@@ -20,7 +21,7 @@ export default function WatchRoom() {
     const { identity, selectedVideo, localFile, mode, password, roomId, backToDashboard } = useApp();
     const playerRef = useRef<VideoPlayerHandle>(null);
 
-    // State
+
     const [streamUrl, setStreamUrl] = useState<string | null>(null);
     const [loadingUrl, setLoadingUrl] = useState(mode === 'cloud');
     const [error, setError] = useState('');
@@ -34,20 +35,20 @@ export default function WatchRoom() {
     const [notification, setNotification] = useState('');
     const [hashWarning, setHashWarning] = useState('');
 
-    // Refs
+
     const localBufferingRef = useRef(false);
     const peerBufferingRef = useRef(false);
 
     const effectiveRoomId = roomId || selectedVideo?.id || 'default';
     const videoTitle = mode === 'local' ? localFile?.name : selectedVideo?.name;
 
-    // ===== Notification helper =====
+
     const showNotification = useCallback((msg: string) => {
         setNotification(msg);
         setTimeout(() => setNotification(''), 4000);
     }, []);
 
-    // ===== Sync Engine Callbacks =====
+
 
     const handlePlaybackState = useCallback((event: PlaybackStateEvent) => {
         const player = playerRef.current;
@@ -116,7 +117,7 @@ export default function WatchRoom() {
         const playing = player.isPlaying();
         syncEngine.emitPlaybackState(playing ? 'playing' : 'paused', time);
 
-        // Also re-send file hash in local mode
+
         if (mode === 'local' && localFile?.hash) {
             syncEngine.emitFileHash(localFile.hash, localFile.name);
         }
@@ -145,7 +146,14 @@ export default function WatchRoom() {
         }
     }, [showNotification]);
 
-    // ===== Sync Engine =====
+    const handleAudioTrack = useCallback((event: AudioTrackEvent) => {
+        const player = playerRef.current;
+        if (!player) return;
+        player.setAudioTrack(event.trackIndex);
+        showNotification(`${event.sender} changed audio track`);
+    }, [showNotification]);
+
+
     const syncEngine = useSyncEngine({
         videoId: effectiveRoomId,
         identity,
@@ -156,10 +164,11 @@ export default function WatchRoom() {
         onChatUiState: handleChatUiState,
         onRequestState: handleRequestState,
         onFileHash: handleFileHash,
+        onAudioTrack: handleAudioTrack,
         onPresenceChange: handlePresenceChange,
     });
 
-    // ===== Setup video source =====
+
     useEffect(() => {
         if (mode === 'local' && localFile?.objectUrl) {
             setStreamUrl(localFile.objectUrl);
@@ -185,7 +194,7 @@ export default function WatchRoom() {
         }
     }, [mode, localFile, selectedVideo, password]);
 
-    // ===== Broadcast file hash on connect (local mode) =====
+
     useEffect(() => {
         if (syncEngine.connected && mode === 'local' && localFile?.hash) {
             syncEngine.emitFileHash(localFile.hash, localFile.name);
@@ -195,7 +204,6 @@ export default function WatchRoom() {
         }
     }, [syncEngine.connected, mode, localFile]);
 
-    // ===== Periodic time sync =====
     useEffect(() => {
         const interval = setInterval(() => {
             const player = playerRef.current;
@@ -210,7 +218,7 @@ export default function WatchRoom() {
         return () => clearInterval(interval);
     }, [syncEngine]);
 
-    // ===== Player event handlers =====
+
 
     const handlePlay = useCallback(
         (time: number) => { syncEngine.emitPlaybackState('playing', time); },
@@ -237,7 +245,11 @@ export default function WatchRoom() {
         syncEngine.emitBufferState(false);
     }, [syncEngine]);
 
-    // ===== Chat handlers =====
+    const handleAudioTrackChange = useCallback(
+        (trackIndex: number) => { syncEngine.emitAudioTrack(trackIndex); },
+        [syncEngine]
+    );
+
 
     const handleSendMessage = useCallback(
         (text: string) => {
@@ -256,16 +268,16 @@ export default function WatchRoom() {
         syncEngine.emitChatUiState(newState);
     }, [chatOpen, syncEngine]);
 
-    // ===== Render =====
+
 
     return (
         <div style={styles.container}>
-            {/* Notification toast */}
+
             {notification && (
                 <div className="xp-notification">{notification}</div>
             )}
 
-            {/* Top bar */}
+
             <div className="xp-window" style={styles.topBar}>
                 <div className="xp-title-bar">
                     <span className="xp-title-bar-text">
@@ -279,7 +291,7 @@ export default function WatchRoom() {
                     </div>
                 </div>
 
-                {/* Status bar */}
+
                 <div className="xp-statusbar" style={{ borderTop: 'none' }}>
                     <div className="xp-statusbar-section">
                         <span style={{ marginRight: 12 }}>
@@ -294,7 +306,7 @@ export default function WatchRoom() {
                 </div>
             </div>
 
-            {/* Hash mismatch warning */}
+
             {hashWarning && (
                 <div style={styles.hashWarning}>
                     {hashWarning}
@@ -304,9 +316,9 @@ export default function WatchRoom() {
                 </div>
             )}
 
-            {/* Main content */}
+
             <div style={styles.main}>
-                {/* Video area */}
+
                 <div style={styles.videoArea}>
                     {loadingUrl && (
                         <div style={styles.loadingOverlay}>
@@ -332,10 +344,10 @@ export default function WatchRoom() {
                             onSeeked={handleSeeked}
                             onBufferingStart={handleBufferingStart}
                             onBufferingEnd={handleBufferingEnd}
+                            onAudioTrackChange={handleAudioTrackChange}
                         />
                     )}
 
-                    {/* Buffer notice overlay */}
                     {(bufferNotice || peerBuffering) && (
                         <div style={styles.bufferNotice}>
                             <div className="xp-window" style={{ maxWidth: 300 }}>
@@ -355,7 +367,6 @@ export default function WatchRoom() {
                     )}
                 </div>
 
-                {/* Chat sidebar / overlay */}
                 <div style={styles.chatArea}>
                     <ChatPanel
                         messages={messages}

@@ -47,7 +47,7 @@ export default function PasswordGate() {
                 <div className="xp-body" style={styles.body}>
                     <div style={styles.icon}>🖥️</div>
                     <p style={styles.welcome}>Welcome to MnM</p>
-                    <p style={styles.subtitle}>Enter the shared password to continue.</p>
+                    <p style={styles.subtitle}>Heyy-Hola.</p>
 
                     <form onSubmit={handleSubmit} style={styles.form}>
                         <label style={styles.label}>Password:</label>
