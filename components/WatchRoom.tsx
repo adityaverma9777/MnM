@@ -38,6 +38,8 @@ export default function WatchRoom() {
 
     const localBufferingRef = useRef(false);
     const peerBufferingRef = useRef(false);
+    const bufferTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+    const localBufferTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
     const effectiveRoomId = roomId || selectedVideo?.id || 'default';
     const videoTitle = mode === 'local' ? localFile?.name : selectedVideo?.name;
@@ -70,13 +72,16 @@ export default function WatchRoom() {
         setPeerBuffering(event.isBuffering);
 
         if (event.isBuffering) {
-            setBufferNotice(`Waiting for ${event.sender}…`);
-            playerRef.current?.pause();
+
+            if (bufferTimerRef.current) clearTimeout(bufferTimerRef.current);
+            bufferTimerRef.current = setTimeout(() => {
+                if (peerBufferingRef.current) {
+                    setBufferNotice(`Waiting for ${event.sender}…`);
+                }
+            }, 3000);
         } else {
+            if (bufferTimerRef.current) clearTimeout(bufferTimerRef.current);
             setBufferNotice('');
-            if (!localBufferingRef.current) {
-                playerRef.current?.play();
-            }
         }
     }, []);
 
@@ -85,11 +90,13 @@ export default function WatchRoom() {
         if (!player) return;
 
         const localTime = player.getCurrentTime();
-        const drift = Math.abs(localTime - event.time) * 1000;
+        const driftSeconds = Math.abs(localTime - event.time);
 
-        if (drift > 500) {
+
+        if (driftSeconds > 2) {
             player.seekTo(event.time);
         }
+
 
         const localPlaying = player.isPlaying();
         if (event.state === 'playing' && !localPlaying && !peerBufferingRef.current && !localBufferingRef.current) {
@@ -237,11 +244,18 @@ export default function WatchRoom() {
 
     const handleBufferingStart = useCallback(() => {
         localBufferingRef.current = true;
-        syncEngine.emitBufferState(true);
+
+        if (localBufferTimerRef.current) clearTimeout(localBufferTimerRef.current);
+        localBufferTimerRef.current = setTimeout(() => {
+            if (localBufferingRef.current) {
+                syncEngine.emitBufferState(true);
+            }
+        }, 2000);
     }, [syncEngine]);
 
     const handleBufferingEnd = useCallback(() => {
         localBufferingRef.current = false;
+        if (localBufferTimerRef.current) clearTimeout(localBufferTimerRef.current);
         syncEngine.emitBufferState(false);
     }, [syncEngine]);
 
