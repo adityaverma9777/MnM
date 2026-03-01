@@ -36,6 +36,22 @@ function isHlsSource(src: string): boolean {
     return src.split('?')[0].toLowerCase().endsWith('.m3u8');
 }
 
+function convertSrtToVtt(srt: string): string {
+    let vtt = 'WEBVTT\n\n';
+    const lines = srt.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.includes('-->')) {
+            vtt += line.replace(/,/g, '.') + '\n';
+        } else if (/^\d+$/.test(line.trim()) && i + 1 < lines.length && lines[i + 1].includes('-->')) {
+            continue;
+        } else {
+            vtt += line + '\n';
+        }
+    }
+    return vtt;
+}
+
 const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer(
     { src, onPlay, onPause, onSeeked, onBufferingStart, onBufferingEnd, onTimeUpdate, onAudioTrackChange, onError },
     ref
@@ -43,6 +59,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
     const videoRef = useRef<HTMLVideoElement>(null);
     const hlsRef = useRef<Hls | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [subtitleUrl, setSubtitleUrl] = useState<string | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -253,6 +271,23 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         };
     }, [onPlay, onPause, onSeeked, onTimeUpdate, onBufferingStart, onBufferingEnd]);
 
+    useEffect(() => {
+        if (subtitleUrl && videoRef.current) {
+            const tracks = videoRef.current.textTracks;
+            const enableTrack = () => {
+                for (let i = 0; i < tracks.length; i++) {
+                    if (tracks[i].label === 'Custom Subtitles') {
+                        tracks[i].mode = 'showing';
+                        return true;
+                    }
+                }
+                return false;
+            };
+            if (!enableTrack()) {
+                setTimeout(enableTrack, 150);
+            }
+        }
+    }, [subtitleUrl]);
 
     useEffect(() => {
         const handleFsChange = () => {
@@ -335,6 +370,30 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
         if (videoRef.current) videoRef.current.playbackRate = next;
     }, [playbackRate]);
 
+    const handleSubtitleUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const text = event.target?.result as string;
+            if (text) {
+                let vttString = text;
+                if (file.name.toLowerCase().endsWith('.srt')) {
+                    vttString = convertSrtToVtt(text);
+                }
+                const blob = new Blob([vttString], { type: 'text/vtt' });
+                const url = URL.createObjectURL(blob);
+                setSubtitleUrl(url);
+            }
+        };
+        reader.readAsText(file);
+
+        if (e.target) {
+            e.target.value = '';
+        }
+    }, []);
+
     const formatTime = (t: number) => {
         if (!t || !isFinite(t)) return '0:00';
         const hrs = Math.floor(t / 3600);
@@ -356,7 +415,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                 style={styles.video}
                 playsInline
                 onClick={togglePlay}
-            />
+            >
+                {subtitleUrl && (
+                    <track
+                        kind="subtitles"
+                        src={subtitleUrl}
+                        srcLang="en"
+                        label="Custom Subtitles"
+                        default
+                    />
+                )}
+            </video>
 
 
             {isBuffering && (
@@ -408,6 +477,21 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function Vid
                         </span>
                     </div>
                     <div style={styles.controlRight}>
+                        <input
+                            type="file"
+                            accept=".srt,.vtt"
+                            ref={fileInputRef}
+                            onChange={handleSubtitleUpload}
+                            style={{ display: 'none' }}
+                        />
+                        <button
+                            className="xp-btn"
+                            onClick={() => fileInputRef.current?.click()}
+                            style={styles.controlBtn}
+                            title="Add Subtitles"
+                        >
+                            📝
+                        </button>
                         {audioTracks.length > 1 && (
                             <div style={{ position: 'relative' }}>
                                 <button
